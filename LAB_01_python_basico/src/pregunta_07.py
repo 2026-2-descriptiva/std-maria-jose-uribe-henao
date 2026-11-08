@@ -1,3 +1,6 @@
+import pandas as pd
+from pathlib import Path
+
 def pregunta_07():
     """
     Para cada valor distinto de la segunda columna (`value`), construya la
@@ -10,5 +13,12 @@ def pregunta_07():
 
         [(0, ["C"]), (1, ["E", "B", "E"]), (2, ["A", "E"]), ...]
     """
+    ruta = Path(__file__).resolve().parent.parent / "data" / "data.csv.gz"
+    df = pd.read_csv(ruta, sep="\t", compression="gzip", header=None)
+    valores = df.groupby(1)[0].agg(list) # Da como resultado una serie
+    resultado = list(valores.items())
+    print(resultado)
 
-    raise NotImplementedError
+    return resultado
+
+pregunta_07()

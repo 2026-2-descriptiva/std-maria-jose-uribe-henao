@@ -1,3 +1,6 @@
+import pandas as pd
+from pathlib import Path
+
 def pregunta_06():
     """
     La quinta columna (`metrics`) contiene pares `clave:valor` separados por
@@ -12,5 +15,14 @@ def pregunta_06():
 
         [("aaa", 1, 9), ("bbb", 1, 9), ...]
     """
+    ruta = Path(__file__).resolve().parent.parent / "data" / "data.csv.gz"
+    df = pd.read_csv(ruta, sep="\t", compression="gzip", header=None)
+    metricas = df[4].str.split(',').explode()
+    metricas  = metricas.str.split(':', expand=True)
+    metricas[1] = metricas[1].astype(int)
+    valores = metricas.groupby(0)[1].agg(['min', 'max'])
+    resultado = list(valores.itertuples(index=True, name=None))
 
-    raise NotImplementedError
+    return resultado
+
+pregunta_06()

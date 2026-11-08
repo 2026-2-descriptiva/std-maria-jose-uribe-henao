@@ -1,3 +1,6 @@
+import pandas as pd
+from pathlib import Path
+
 def pregunta_09():
     """
     Cuente cuántas veces aparece cada clave en la quinta columna (`metrics`)
@@ -9,4 +12,14 @@ def pregunta_09():
         {"aaa": 13, "bbb": 16, "ccc": 23, ...}
     """
 
-    raise NotImplementedError
+    ruta = Path(__file__).resolve().parent.parent / "data" / "data.csv.gz"
+    df = pd.read_csv(ruta, sep="\t", compression="gzip", header=None)
+    metricas = df[4].str.split(',').explode()
+    claves  = metricas.str.split(':').str[0]
+    claves = claves.value_counts().sort_index()
+    diccionario = claves.to_dict()
+
+    return diccionario
+
+
+pregunta_09()

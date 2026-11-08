@@ -20,7 +20,7 @@ def pregunta_01():
 
     Ejemplo del formato de la respuesta (se omite la última columna):
 
-           cluster  cantidad_de_palabras_clave  porcentaje_de_palabras_clave
+          cluster  cantidad_de_palabras_clave  porcentaje_de_palabras_clave
         0        1                         105                          15.9
         1        2                         102                          15.4
         ...
