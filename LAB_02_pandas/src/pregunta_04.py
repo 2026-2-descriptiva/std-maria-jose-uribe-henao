@@ -1,3 +1,6 @@
+import pandas as pd
+from pathlib import Path
+
 def pregunta_04():
     """
     Usando `data/tbl0.tsv`, calcule el promedio de la columna `c2` para cada
@@ -12,5 +15,9 @@ def pregunta_04():
         C    5.4000
         ...
     """
+    ruta = Path(__file__).resolve().parent.parent / "data" / "tbl0.tsv"
+    df = pd.read_csv(ruta, sep="\t")
+    promedios = df.groupby("c1", sort=True)["c2"].agg('mean')
+    return promedios
 
-    raise NotImplementedError
+pregunta_04()
