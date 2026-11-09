@@ -25,3 +25,10 @@
 --
 --  Escriba su consulta debajo de esta línea.
 --
+
+SELECT 
+CAST(STRFTIME('%Y', c23) AS INTEGER) AS YEAR,
+AVG(c21) AS "avg(c21)"
+FROM tbl2
+GROUP BY STRFTIME('%Y', c23)
+ORDER BY YEAR;

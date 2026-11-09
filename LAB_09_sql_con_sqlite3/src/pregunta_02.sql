@@ -21,3 +21,7 @@
 --
 --  Escriba su consulta debajo de esta línea.
 --
+
+SELECT
+COUNT(*)
+FROM tbl1;
