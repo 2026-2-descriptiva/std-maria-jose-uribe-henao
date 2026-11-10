@@ -1,3 +1,7 @@
+import pandas as pd
+import numpy as np
+from pathlib import Path
+
 def pregunta_01():
     """
     Las frases de este laboratorio no están en una tabla, sino en miles de
@@ -25,5 +29,22 @@ def pregunta_01():
         "Cardona slowed her vehicle , turned around ...",neutral
         ...
     """
+    ruta = Path(__file__).resolve().parent.parent / "data"
 
-    raise NotImplementedError
+    for carpeta in sorted(ruta.iterdir()):
+        registros=[]
+        for sentimiento in sorted(carpeta.iterdir()):
+            for archivo in sorted(sentimiento.glob("*.txt")):
+                frase = archivo.read_text(encoding="utf-8").strip()
+                registros.append({
+                    "phrase":frase,
+                    "target": sentimiento.name
+                })
+        df = pd.DataFrame(registros)
+        ruta_salida = Path(__file__).resolve().parent.parent / "submission" / f"{carpeta.name}_dataset.csv"
+        df.to_csv(ruta_salida, index=False)
+    
+    return None
+
+
+pregunta_01()
