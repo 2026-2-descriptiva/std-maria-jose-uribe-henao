@@ -1,3 +1,7 @@
+import pandas as pd
+import numpy as np
+from pathlib import Path
+
 def pregunta_01():
     """
     El archivo `data/clusters_report.txt` es un reporte de clústeres de
@@ -25,5 +29,33 @@ def pregunta_01():
         1        2                         102                          15.4
         ...
     """
+    ruta = Path(__file__).resolve().parent.parent / "data" / "clusters_report.txt"
 
-    raise NotImplementedError
+    with open(ruta, encoding="utf-8") as archivo:
+      lineas = archivo.readlines()
+
+    registros = []
+
+    for linea in lineas:
+      partes = linea.split()
+      if partes and partes[0].isdigit():
+        cluster = int(partes[0])
+        cantidad = int(partes[1])
+        porcentaje = float(partes[2].replace(",", "."))
+        palabras = " ".join(partes[4:])
+        registros.append({    "cluster": cluster,
+        "cantidad_de_palabras_clave": cantidad,
+        "porcentaje_de_palabras_clave": porcentaje,
+        "principales_palabras_clave" : palabras})
+      elif partes and registros:
+        registros[-1]["principales_palabras_clave"] += " " + " ".join(partes)
+
+    df = pd.DataFrame(registros)
+    df["principales_palabras_clave"] = df["principales_palabras_clave"].apply(
+      lambda texto: ", ".join(p.strip() for p in texto.split(",")).removesuffix(".")
+    ) 
+
+    return df
+
+
+pregunta_01()
