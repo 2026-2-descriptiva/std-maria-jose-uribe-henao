@@ -1,3 +1,68 @@
+import pandas as pd
+import numpy as np
+from pathlib import Path
+import json
+import re
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+INPUT_FILE = BASE_DIR / "data" / "ventas.csv.gz"
+OUTPUT_FILE = BASE_DIR / "submission" / "data_quality_report.json"
+
+REQUIRED_COLUMNS = [
+    "supplier_id",
+    "supplier",
+    "country",
+    "city",
+    "purchase_date",
+    "amount",
+    "discount",
+    "weight",
+    "units",
+    "unit_price",
+    "contact_email",
+]
+
+def normalize_column_names(columns):
+    return [
+        str(col).replace("\ufeff", "").strip().lower().replace(" ", "_")
+        for col in columns
+    ]
+
+
+def get_missing_values(df):
+    missing = {}
+
+    for columna in df.columns:
+        valores = df[columna].str.strip()
+        faltantes = valores.eq("") | valores.eq("N/A")
+        missing[columna] = int(faltantes.sum())
+
+    return missing
+
+
+def get_invalid_emails(series):
+    patron = r"[^@\s]+@[^@\s.]+\.[^@\s.]+"
+
+    valores = series.str.strip()
+    presentes = ~valores.isin(["", "N/A"])
+    validos = valores.str.fullmatch(patron).fillna(False)
+
+    return int((presentes & ~validos).sum())
+
+
+def get_invalid_units(series):
+    valores = series.str.strip()
+    presentes = ~valores.isin(["", "N/A"])
+
+    numeros = pd.to_numeric(valores.where(presentes), errors="coerce")
+
+    invalidos = numeros.notna() & (
+        (numeros <= 0) | (numeros % 1 != 0)
+    )
+
+    return int(invalidos.sum())
+
 def main():
     """
     Antes de limpiar o analizar un conjunto de datos, un analista debe
@@ -48,4 +113,57 @@ def main():
         }
     """
 
-    raise NotImplementedError
+    df = pd.read_csv(
+        INPUT_FILE,
+        compression="gzip",
+        dtype=str,
+        keep_default_na=False
+    )
+
+    # Normalizar únicamente los nombres de las columnas
+    df.columns = normalize_column_names(df.columns)
+
+    # Identificar columnas
+    missing_columns = sorted(set(REQUIRED_COLUMNS) - set(df.columns))
+    unexpected_columns = sorted(set(df.columns) - set(REQUIRED_COLUMNS))
+
+    # Contar identificadores repetidos (todas sus apariciones)
+    duplicate_ids = (
+        int(df["supplier_id"].duplicated(keep=False).sum())
+        if "supplier_id" in df.columns else 0
+    )
+
+    # Construir reporte
+    reporte = {
+        "row_count": int(len(df)),
+        "column_count": int(len(df.columns)),
+        "missing_required_columns": missing_columns,
+        "unexpected_columns": unexpected_columns,
+        "duplicate_row_count": int(df.duplicated().sum()),
+        "duplicate_supplier_id_row_count": duplicate_ids,
+        "missing_value_count_by_column": get_missing_values(df),
+        "invalid_email_count": (
+            get_invalid_emails(df["contact_email"])
+            if "contact_email" in df.columns else 0
+        ),
+        "invalid_unit_count": (
+            get_invalid_units(df["units"])
+            if "units" in df.columns else 0
+        ),
+        "country_values": (
+            sorted(df["country"].unique().tolist())
+            if "country" in df.columns else []
+        ),
+    }
+
+    # Crear carpeta y guardar JSON
+    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as archivo:
+        json.dump(reporte, archivo, indent=4, ensure_ascii=False)
+
+    return reporte
+
+
+if __name__ == "__main__":
+    print(main())
