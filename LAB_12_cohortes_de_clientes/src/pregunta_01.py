@@ -1,5 +1,7 @@
 import pandas as pd
-
+import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
 
 def build_cohort_analysis() -> pd.DataFrame:
     """
@@ -44,4 +46,162 @@ def build_cohort_analysis() -> pd.DataFrame:
         ...
     """
 
-    raise NotImplementedError
+    ruta = Path(__file__).resolve().parent.parent
+    entrada = ruta / "data" / "sales.csv.gz"
+    salida = ruta / "submission"
+
+    df = pd.read_csv(entrada, compression="gzip")
+
+    df["OrderDate"] = pd.to_datetime(
+        df["OrderDate"],
+        errors="coerce"
+    )
+
+    df = df.dropna(subset=["CustomerID", "OrderDate"]).copy()
+
+    # Identificar el mes de cada compra
+    df["order_month"] = df["OrderDate"].dt.to_period("M")
+
+    # Identificar la primera compra de cada cliente
+    df["cohort_month"] = (
+        df.groupby("CustomerID")["order_month"]
+        .transform("min")
+    )
+
+    # Calcular los meses transcurridos desde la primera compra
+    df["period_index"] = (
+        (df["order_month"].dt.year - df["cohort_month"].dt.year) * 12
+        + (df["order_month"].dt.month - df["cohort_month"].dt.month)
+    )
+
+    # Contar clientes distintos por cohorte y período
+    retention = (
+        df.groupby(["cohort_month", "period_index"])
+        .agg(active_customers=("CustomerID", "nunique"))
+        .reset_index()
+    )
+
+    # Identificar el tamaño inicial de cada cohorte
+    cohort_sizes = (
+        retention[retention["period_index"] == 0]
+        [["cohort_month", "active_customers"]]
+        .rename(columns={"active_customers": "cohort_size"})
+    )
+
+    retention = retention.merge(
+        cohort_sizes,
+        on="cohort_month",
+        how="left"
+    )
+
+    # Calcular la tasa de retención
+    retention["retention_rate"] = (
+        retention["active_customers"] / retention["cohort_size"]
+    )
+
+    retention["cohort_month"] = retention["cohort_month"].astype(str)
+
+    retention = (
+        retention[[
+            "cohort_month",
+            "period_index",
+            "active_customers",
+            "cohort_size",
+            "retention_rate"
+        ]]
+        .sort_values(["cohort_month", "period_index"])
+        .reset_index(drop=True)
+    )
+
+    salida.mkdir(parents=True, exist_ok=True)
+
+    retention.to_csv(
+        salida / "cohort_retention.csv",
+        index=False
+    )
+
+    # Crear matriz de retención
+    matriz = retention.pivot(
+        index="cohort_month",
+        columns="period_index",
+        values="retention_rate"
+    )
+
+    # Los meses sin compras observadas tienen retención cero
+    ultimo_mes = df["order_month"].max()
+
+    for cohorte in matriz.index:
+        inicio = pd.Period(cohorte, freq="M")
+        meses_observables = (
+            (ultimo_mes.year - inicio.year) * 12
+            + (ultimo_mes.month - inicio.month)
+        )
+
+        columnas_observables = [
+            periodo for periodo in matriz.columns
+            if periodo <= meses_observables
+        ]
+
+        matriz.loc[cohorte, columnas_observables] = (
+            matriz.loc[cohorte, columnas_observables].fillna(0)
+        )
+
+    # Crear mapa de calor
+    fig, ax = plt.subplots(
+        figsize=(max(10, len(matriz.columns) * 0.8),
+                 max(5, len(matriz.index) * 0.5))
+    )
+
+    valores = np.ma.masked_invalid(matriz.to_numpy(dtype=float))
+
+    imagen = ax.imshow(
+        valores,
+        aspect="auto",
+        cmap="YlGnBu",
+        vmin=0,
+        vmax=1
+    )
+
+    ax.set_xticks(range(len(matriz.columns)))
+    ax.set_xticklabels(matriz.columns)
+
+    ax.set_yticks(range(len(matriz.index)))
+    ax.set_yticklabels(matriz.index)
+
+    ax.set_xlabel("Meses desde la primera compra")
+    ax.set_ylabel("Cohorte")
+    ax.set_title("Retención mensual de clientes")
+
+    for i in range(len(matriz.index)):
+        for j in range(len(matriz.columns)):
+            valor = matriz.iloc[i, j]
+
+            if pd.notna(valor):
+                ax.text(
+                    j, i,
+                    f"{valor:.0%}",
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                    color="white" if valor > 0.5 else "black"
+                )
+
+    barra = fig.colorbar(imagen, ax=ax)
+    barra.set_label("Tasa de retención")
+    barra.ax.yaxis.set_major_formatter(
+        plt.FuncFormatter(lambda valor, pos: f"{valor:.0%}")
+    )
+
+    fig.tight_layout()
+
+    fig.savefig(
+        salida / "cohort_retention_heatmap.png",
+        dpi=150,
+        bbox_inches="tight"
+    )
+
+    plt.close(fig)
+
+    return retention
+
+build_cohort_analysis()

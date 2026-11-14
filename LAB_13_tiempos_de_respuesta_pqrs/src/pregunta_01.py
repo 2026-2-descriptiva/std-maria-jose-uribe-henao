@@ -1,5 +1,6 @@
 import pandas as pd
-
+import numpy as np
+from pathlib import Path
 
 def pregunta_01() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
@@ -61,4 +62,134 @@ def pregunta_01() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         ...
     """
 
-    raise NotImplementedError
+    ruta = Path(__file__).resolve().parent.parent
+    entrada = ruta / "data"
+    salida = ruta / "submission"
+
+    web = pd.read_csv(
+        entrada / "historical_requests_web.csv.gz",
+        compression="gzip"
+    )
+
+    letter = pd.read_csv(
+        entrada / "historical_requests_letter.csv.gz",
+        compression="gzip"
+    )
+
+    web = web.drop_duplicates().copy()
+    letter = letter.drop_duplicates().copy()
+
+    web["channel"] = "web"
+    letter["channel"] = "letter"
+
+    df = pd.concat([letter, web], ignore_index=True)
+
+    df["in_date"] = pd.to_datetime(
+        df["in_date"],
+        errors="coerce"
+    )
+
+    df["out_date"] = pd.to_datetime(
+        df["out_date"],
+        errors="coerce"
+    )
+
+    df["answered"] = df["out_date"].notna()
+    df["pending"] = ~df["answered"]
+
+    df["calendar_days"] = (
+        df["out_date"] - df["in_date"]
+    ).dt.days
+
+    df["business_days"] = np.nan
+
+    respondidas = df["answered"] & df["in_date"].notna()
+
+    fechas_entrada = (
+        df.loc[respondidas, "in_date"]
+        .to_numpy(dtype="datetime64[D]")
+    )
+
+    fechas_respuesta = (
+        df.loc[respondidas, "out_date"]
+        .to_numpy(dtype="datetime64[D]")
+    )
+
+    df.loc[respondidas, "business_days"] = np.busday_count(
+        fechas_entrada + np.timedelta64(1, "D"),
+        fechas_respuesta + np.timedelta64(1, "D")
+    )
+
+    df["on_time"] = (
+        df["answered"] &
+        df["business_days"].le(15)
+    )
+
+    df["year"] = df["in_date"].dt.year
+
+    dias = [
+        "Monday", "Tuesday", "Wednesday", "Thursday",
+        "Friday", "Saturday", "Sunday"
+    ]
+
+    df["day_name"] = df["in_date"].dt.day_name()
+
+    channel_summary = (
+        df.groupby("channel")
+        .agg(
+            requests=("channel", "size"),
+            answered=("answered", "sum"),
+            pending=("pending", "sum"),
+            median_business_days=("business_days", "median"),
+            on_time_rate=("on_time", "mean")
+        )
+        .reset_index()
+        .sort_values("channel")
+    )
+
+    yearly_summary = (
+        df.groupby(["year", "channel"])
+        .agg(
+            requests=("channel", "size"),
+            pending=("pending", "sum"),
+            on_time_rate=("on_time", "mean")
+        )
+        .reset_index()
+        .sort_values(["year", "channel"])
+    )
+
+    yearly_summary["year"] = yearly_summary["year"].astype(int)
+
+    entry_day_summary = (
+        df.groupby("day_name")
+        .agg(
+            requests=("day_name", "size"),
+            median_calendar_days=("calendar_days", "median"),
+            median_business_days=("business_days", "median")
+        )
+        .reindex(dias)
+        .reset_index()
+    )
+
+    salida.mkdir(parents=True, exist_ok=True)
+
+    channel_summary.to_csv(
+        salida / "channel_summary.csv",
+        index=False
+    )
+
+    yearly_summary.to_csv(
+        salida / "yearly_summary.csv",
+        index=False
+    )
+
+    entry_day_summary.to_csv(
+        salida / "entry_day_summary.csv",
+        index=False
+    )
+
+    return channel_summary, yearly_summary, entry_day_summary
+
+
+pregunta_01()
+

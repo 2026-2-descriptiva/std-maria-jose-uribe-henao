@@ -1,3 +1,7 @@
+import pandas as pd
+import json
+from pathlib import Path
+
 def pregunta_01():
     """
     Una aseguradora quiere publicar datos de sus afiliados para que un grupo
@@ -80,4 +84,128 @@ def pregunta_01():
         }
     """
 
-    raise NotImplementedError
+    ruta = Path(__file__).resolve().parent.parent
+    entrada = ruta / "data" / "insurance.csv.gz"
+    salida = ruta / "submission"
+
+    df = pd.read_csv(entrada, compression="gzip")
+
+    k = 5
+
+    # Cuasi-identificadores originales
+    columnas_originales = ["age", "sex", "bmi", "children", "region"]
+
+    grupos_originales = df.groupby(columnas_originales, dropna=False).size()
+
+    original_k = int(grupos_originales.min())
+    original_unique_records = int((grupos_originales == 1).sum())
+
+    # Generalización de variables
+    df["age_group"] = pd.cut(
+        df["age"],
+        bins=[18, 30, 40, 50, 65],
+        labels=["18-29", "30-39", "40-49", "50-64"],
+        right=False
+    )
+
+    df["bmi_group"] = pd.cut(
+        df["bmi"],
+        bins=[float("-inf"), 18.5, 25, 30, float("inf")],
+        labels=["bajo peso", "normal", "sobrepeso", "obesidad"],
+        right=False
+    )
+
+    df["children_group"] = pd.cut(
+        df["children"],
+        bins=[-1, 0, 2, float("inf")],
+        labels=["0", "1-2", "3+"]
+    )
+
+    # Esquemas de generalización
+    esquemas = {
+        "with_children": [
+            "age_group", "sex", "bmi_group",
+            "children_group", "region"
+        ],
+        "without_children": [
+            "age_group", "sex", "bmi_group", "region"
+        ]
+    }
+
+    resultados = {}
+    publicados = {}
+
+    for nombre, columnas in esquemas.items():
+
+        grupos = df.groupby(
+            columnas, observed=True, dropna=False
+        )
+
+        tamaños = grupos["smoker"].transform("size")
+
+        publicado = df.loc[
+            tamaños >= k,
+            columnas + ["smoker", "charges"]
+        ].copy()
+
+        grupos_publicados = publicado.groupby(
+            columnas, observed=True, dropna=False
+        )
+
+        diversidad = grupos_publicados["smoker"].nunique()
+
+        registros_sin_diversidad = (
+            grupos_publicados["smoker"]
+            .transform("nunique")
+            .eq(1)
+            .sum()
+        )
+
+        resultados[nombre] = {
+            "quasi_identifiers": columnas,
+            "equivalence_classes": int(grupos.ngroups),
+            "k_before_suppression": int(tamaños.min()),
+            "suppressed_records": int((tamaños < k).sum()),
+            "published_records": int(len(publicado)),
+            "published_classes": int(grupos_publicados.ngroups),
+            "classes_without_smoker_diversity": int((diversidad == 1).sum()),
+            "records_without_smoker_diversity": int(registros_sin_diversidad)
+        }
+
+        publicados[nombre] = publicado
+
+    # Seleccionar el esquema que suprime menos registros
+    seleccionado = min(
+        resultados,
+        key=lambda x: resultados[x]["suppressed_records"]
+    )
+
+    df_publicado = publicados[seleccionado]
+
+    # Construir reporte
+    reporte = {
+        "original_k": original_k,
+        "original_unique_records": original_unique_records,
+        "schemes": resultados,
+        "selected_scheme": seleccionado,
+        "mean_charges_original": float(df["charges"].mean()),
+        "mean_charges_published": float(df_publicado["charges"].mean()),
+        "smoker_rate_original": float(df["smoker"].eq("yes").mean()),
+        "smoker_rate_published": float(df_publicado["smoker"].eq("yes").mean())
+    }
+
+    # Guardar resultados
+    salida.mkdir(parents=True, exist_ok=True)
+
+    df_publicado.to_csv(
+        salida / "insurance_published.csv",
+        index=False
+    )
+
+    with open(salida / "privacy_report.json", "w", encoding="utf-8") as archivo:
+        json.dump(reporte, archivo, indent=4, ensure_ascii=False)
+
+    return reporte
+
+
+pregunta_01()
