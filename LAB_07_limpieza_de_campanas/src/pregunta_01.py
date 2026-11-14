@@ -1,5 +1,5 @@
 import pandas as pd
-
+from pathlib import Path
 
 def clean_campaign_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
@@ -43,4 +43,78 @@ def clean_campaign_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         ...
     """
 
-    raise NotImplementedError
+    ruta = Path(__file__).resolve().parent.parent
+    entrada = ruta / "data"
+    salida = ruta / "submission"
+
+    archivos = sorted(entrada.glob("bank-marketing-campaing-*.csv.gz"))
+
+    df = pd.concat(
+        [pd.read_csv(archivo, compression="gzip") for archivo in archivos],
+        ignore_index=True
+    )
+
+    # Datos de clientes
+    client = df[[
+        "client_id", "age", "job", "marital", "education",
+        "credit_default", "mortgage"
+    ]].copy()
+
+    client["job"] = (
+        client["job"]
+        .str.replace(".", "", regex=False)
+        .str.replace("-", "_", regex=False)
+    )
+
+    client["education"] = (
+        client["education"]
+        .str.replace(".", "_", regex=False)
+        .replace("unknown", pd.NA)
+    )
+
+    client["credit_default"] = (client["credit_default"] == "yes").astype(int)
+    client["mortgage"] = (client["mortgage"] == "yes").astype(int)
+
+    # Datos de campaña
+    campaign = df[[
+        "client_id", "number_contacts", "contact_duration",
+        "previous_campaign_contacts", "previous_outcome",
+        "campaign_outcome", "month", "day"
+    ]].copy()
+
+    campaign["previous_outcome"] = (
+        campaign["previous_outcome"] == "success"
+    ).astype(int)
+
+    campaign["campaign_outcome"] = (
+        campaign["campaign_outcome"] == "yes"
+    ).astype(int)
+
+    campaign["last_contact_date"] = pd.to_datetime(
+        "2022-" + campaign["month"].astype(str) + "-" + campaign["day"].astype(str),
+        errors="coerce"
+    ).dt.strftime("%Y-%m-%d")
+
+    campaign = campaign.drop(columns=["month", "day"])
+
+    # Datos económicos
+    economics = df[[
+        "client_id", "cons_price_idx", "euribor_three_months"
+    ]].copy()
+
+    # Guardar archivos
+    salida.mkdir(parents=True, exist_ok=True)
+
+    client.to_csv(salida / "client.csv", index=False)
+    campaign.to_csv(salida / "campaign.csv", index=False)
+    economics.to_csv(salida / "economics.csv", index=False)
+
+    return client, campaign, economics
+
+
+if __name__ == "__main__":
+    client, campaign, economics = clean_campaign_data()
+
+    # print(client.head())
+    # print(campaign.head())
+    # print(economics.head())
